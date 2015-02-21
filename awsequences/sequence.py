@@ -1,7 +1,6 @@
 import struct
 
-HEADER = ('\x7f\x7f\x7f\x79',
-          '\x7f\x7f\x7f\x7a')
+HEADER = (b'\x7f\x7f\x7fz',)
 
 class Util:
     @staticmethod
@@ -19,7 +18,8 @@ class Util:
         len = Util.readshort(f)
 
         chunk = f.read(len)
-        return struct.unpack('>%is' % len, chunk)[0][:-1]
+
+        return struct.unpack('>%is' % len, chunk)[0].decode('ascii')
 
     @staticmethod
     def readfloat(f):
@@ -69,7 +69,6 @@ class Sequence:
 
     def _from_file_blocks(self, f):
         blocks_len = Util.readuint(f)
-        import pdb; pdb.set_trace()
         assert(blocks_len > 3)
 
         self.x_block = Util.readfloatblock(f)
