@@ -1,20 +1,32 @@
 import os, glob
 import zipfile
 
+def dirty_float(x):
+    try:
+        return float(x)
+    except ValueError:
+        if(x[-1] == '.'):
+            return float(x[:-1])
+
 class RwxReader:
     SKIP_KEYWORDS = (
         "texturemodes",
+        "texturemode",
         "addtexturemode",
         "removetexturemode",
         "addmaterialmode",
         "removematerialmode",
-        "opacity",
+        "opacityfix",
         "texture",
         "lightsampling",
         "geometrysampling",
         "materialmodes",
         "addhint",
-        "hints"
+        "hints",
+        "axisalignment",
+        "sphere",
+        "box",
+        "texturemipmapstate",
     )
 
     protos = {}
@@ -24,31 +36,8 @@ class RwxReader:
 
         self.read_rwx()
 
-    def read_word_full(self):
+    def read_line(self):
         return next(self.token_gen, None)
-
-    def read_word(self, expecting = None):
-        word = next(self.token_gen, None)[0]
-
-        if(word is None):
-            raise Exception("Unexpected end of file")
-
-        if(expecting is not None and
-           word is not expecting):
-            raise Exception("Unexpected %s", word)
-
-        return word
-
-    def read_int(self):
-        word = next(self.token_gen, None)[0]
-
-        return int(word)
-
-
-    def read_float(self):
-        word = next(self.token_gen, None)[0]
-
-        return float(word)
 
     def file_generator(self, f):
         for line_no, line in enumerate([l.decode('ascii').strip() for l in f]):
@@ -61,15 +50,18 @@ class RwxReader:
             if "#" in line:
                 line = line[:line.index("#")].strip()
 
-            if(not any([line.lower().startswith(k)
-                        for k in self.SKIP_KEYWORDS])):
-                for word in line.split():
-                    result = (word.lower(), line, line_no)
-                    yield result
+            line = line.strip().lower()
+            line_split = line.split()
+            
+            if(len(line_split) <= 0 or
+               any([line_split[0] == k for k in self.SKIP_KEYWORDS])):
+                continue
+
+            yield (line, line_split)
 
     def proto_generator(self, proto_name, file_generator):
-        for word in self.protos[proto_name]:
-            yield word
+        for line in self.protos[proto_name]:
+            yield line
 
         yield from file_generator
 
@@ -79,17 +71,17 @@ class RwxReader:
 
         self.token_gen = self.proto_generator(proto_name, self.token_gen)
 
-    def read_proto(self):
-        name =self.read_word()
+    def read_proto(self, line):
+        name = line.split()[1]
 
-        proto_words = []
+        proto_lines = []
         
-        word = self.read_word_full()
-        while(word[0].lower() != "protoend"):
-            proto_words.append(word)
-            word =self.read_word_full()
+        line, line_split = self.read_line()
+        while(line_split[0] != "protoend"):
+            proto_lines.append((line, line_split,))
+            line, line_split = self.read_line()
 
-        self.protos[name] = proto_words
+        self.protos[name] = proto_lines
 
     def read_clump(self, end_token="clumpend"):
         clump = {
@@ -101,163 +93,136 @@ class RwxReader:
             'tag': 0,
         }
 
-        word_full = self.read_word_full()
-        word = word_full[0]
-        while(word != end_token):
-            if(word == "vertex"):
+        line, line_split = self.read_line()
+
+        while(line_split[0] != end_token):
+            if(line_split[0] == "vertex" or line_split[0] == "vertexext"):
                 vertex = {
-                    'x': self.read_float(),
-                    'y': self.read_float(),
-                    'z': self.read_float(),
+                    'x': dirty_float(line_split[1]),
+                    'y': dirty_float(line_split[2]),
+                    'z': dirty_float(line_split[3]),
                     'transform': len(clump['transforms'])
                 }
+                
+                i = 4
+                while(i < len(line_split)-4):
+                    if(line_split[i] == "uv"):
+                        vertex['u'] = dirty_float(line_split[i+1])
+                        vertex['v'] = dirty_float(line_split[i+2])
+                        i += 3
 
-                remaining_terms = len(word_full[1].split())-5
-                while(remaining_terms > 0):
-                    word_full = self.read_word_full()
-                    word = word_full[0]
-
-                    if(word_full[0] == "uv"):
-                        vertex['u'] = self.read_float()
-                        vertex['v'] = self.read_float()
-                        remaining_terms = remaining_terms - 2
-
-            elif(word == "triangle"):
+            elif(line_split[0] == "triangle" or line_split[0] == "triangleext"):
                 clump['triangles'].append({
-                    'indices': [self.read_int(), self.read_int(), self.read_int()],
-                    'material': len(clump['materials'])
+                    'indices': [int(line_split[1]),
+                                int(line_split[2]),
+                                int(line_split[3]),],
+                    'material': len(clump['materials']),
+                    'tag': line_split[-1] if line_split[-2] == "tag" else 0
                 })
 
-            elif(word == "quad" or word == "quadext"):
-                indices = [self.read_int(), self.read_int(), self.read_int(), self.read_int()]
+            elif(line_split[0] == "quad" or line_split[0] == "quadext"):
+                indices = [int(x) for x in line_split[1:5]]
 
                 clump['triangles'].append({
                     'indices': [indices[0], indices[1], indices[2]],
-                    'material': len(clump['materials'])
+                    'material': len(clump['materials']),
+                    'tag': line_split[-1] if line_split[-2] == "tag" else 0
                 })
                 clump['triangles'].append({
                     'indices': [indices[2], indices[3], indices[0]],
-                    'material': len(clump['materials'])
+                    'material': len(clump['materials']),
+                    'tag': line_split[-1] if line_split[-2] == "tag" else 0
                 })
 
-            elif(word == "polygon"):
-                count = self.read_int()
+            elif(line_split[0] == "polygon"):
+                count = int(line_split[1])
 
-                indices = [self.read_int() for _ in range(0, count)]
+                indices = [int(line_split[i]) for i in range(2, count+2)]
 
                 for i in range(0, count-1):
                     clump['triangles'].append({
                         'indices': [indices[0], indices[i], indices[i+1]],
-                        'material': len(clump['materials'])
+                        'material': len(clump['materials']),
+                        'tag': line_split[-1] if line_split[-2] == "tag" else 0
                     })
                     
-            elif(word == "surface"):
+            elif(line_split[0] == "surface"):
                 clump['materials'].append({
                     'type': 'surface',
-                    'ambient': self.read_float(),
-                    'diffuse': self.read_float(),
-                    'specular': self.read_float()
+                    'ambient': dirty_float(line_split[1]),
+                    'diffuse': dirty_float(line_split[2]),
+                    'specular': dirty_float(line_split[3])
                 })
-            elif(word == "color"):
+            elif(line_split[0] == "color"):
                 clump['materials'].append({
                     'type': 'color',
-                    'r': self.read_float(),
-                    'g': self.read_float(),
-                    'b': self.read_float()
+                    'r': dirty_float(line_split[1]),
+                    'g': dirty_float(line_split[2]),
+                    'b': dirty_float(line_split[3])
                 })
-            elif(word == "ambient"):
+            elif(any(line_split[0] == s for s in ("ambient", "diffuse", "specular", "opacity"))):
                 clump['materials'].append({
-                    'type': 'ambient',
-                    'ambient': self.read_float(),
+                    'type': line_split[0],
+                    line_split[0]: dirty_float(line_split[1])
                 })
-            elif(word == "diffuse"):
-                clump['materials'].append({
-                    'type': 'diffuse',
-                    'diffuse': self.read_float(),
-                })
-            elif(word == "specular"):
-                clump['materials'].append({
-                    'type': 'specular',
-                    'specular': self.read_float(),
-                })
-            elif(word == "tag"):
-                clump['tag'] = self.read_int()
+            elif(line_split[0] == "tag"):
+                clump['tag'] = int(line_split[1])
 
-            elif(word == "rotate"):
+            elif(line_split[0] == "rotate"):
                 clump['transforms'].append({
                     'type': 'rotate',
-                    'x': self.read_float(),
-                    'y': self.read_float(),
-                    'z': self.read_float(),
-                    'angle': self.read_float()
+                    'x': dirty_float(line_split[1]),
+                    'y': dirty_float(line_split[2]),
+                    'z': dirty_float(line_split[3]),
+                    'angle': dirty_float(line_split[4])
                 })
-            elif(word == "scale"):
+            elif(line_split[0] == "scale"):
                 clump['transforms'].append({
                     'type': 'scale',
-                    'x': self.read_float(),
-                    'y': self.read_float(),
-                    'z': self.read_float()
                 })
-            elif(word == "translate"):
+            elif(line_split[0] == "translate"):
                 clump['transforms'].append({
                     'type': 'translate',
-                    'x': self.read_float(),
-                    'y': self.read_float(),
-                    'z': self.read_float()
+                    'x': dirty_float(line_split[1]),
+                    'y': dirty_float(line_split[2]),
+                    'z': dirty_float(line_split[3]),
                 })
-            elif(word == "transform"):
+            elif(line_split[0] == "transform" or line_split[0] == "transformjoint"):
                 clump['transforms'].append({
                     'type': 'transform',
-                    'matrix': [self.read_float() for _ in range(0, 16)],
+                    'matrix': [dirty_float(x) for x in line_split[1:17]]
                 })
-            elif(word == "identity"):
-                clump['transforms'].append({
-                    'type': 'identity'
-                })
-            elif(word == "identityjoint"):
+            elif(line_split[0] == "identity" or line_split[0] == "identityjoint"):
                 clump['transforms'].append({
                     'type': 'identity'
                 })
 
-            elif(word == "protobegin"):
-                self.read_proto()
-            elif(word == "protoinstance"):
-                self.apply_protoinstance(self.read_word())
+            elif(line_split[0] == "protobegin"):
+                self.read_proto(line)
+            elif(line_split[0] == "protoinstance"):
+                self.apply_protoinstance(line_split[1])
 
-            elif(word == "clumpbegin"):
+            elif(any(line_split[0] == s for s in
+                     ("clumpbegin", "transformbegin", "jointtransformbegin",))):
+                type = line_split[0][:-5]
                 clump['children'].append({
-                    'type': 'clump',
+                    'type': type,
                     'transform': len(clump['transforms']),
-                    'clump': self.read_clump()
-                })
-            elif(word == "transformbegin"):
-                clump['children'].append({
-                    'type': 'transform',
-                    'transform': len(clump['transforms']),
-                    'group': self.read_clump("transformend")
-                })
-            elif(word == "jointtransformbegin"):
-                clump['children'].append({
-                    'type': 'transform',
-                    'transform': len(clump['transforms']),
-                    'group': self.read_clump("jointtransformend")
+                    'clump': self.read_clump(type + "end")
                 })
             else:
-                raise Exception("Unexpected %s, line %d\n%s" % (word, self.line_no, self.full_line))
+                raise Exception("Unexpected %s, line %d\n%s" % (line_split[0], self.line_no, self.full_line))
 
-            word_full = self.read_word_full()
-            word = word_full[0]
+            line, line_split = self.read_line()
 
         return clump
 
     def read_rwx(self):
-        word = self.read_word()
+        line, line_split = self.read_line()
 
-        if(word == "modelbegin"):
-            model = self.read_clump("modelend")
+        if(line_split[0] == "modelbegin"):
+            self.model = self.read_clump("modelend")
 
-            print("Read model")
-        
 
 def models_import(path):
     os.chdir(path)
