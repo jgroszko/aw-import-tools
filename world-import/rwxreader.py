@@ -6,6 +6,10 @@ def dirty_float(x):
             return float(x[:-1])
 
 class RwxReader:
+    """
+    Parses ActiveWorlds RWX files into a dictionary
+    """
+
     SKIP_KEYWORDS = (
         "texturemodes",
         "texturemode",
@@ -107,6 +111,7 @@ class RwxReader:
                         vertex['u'] = dirty_float(line_split[i+1])
                         vertex['v'] = dirty_float(line_split[i+2])
                         i += 3
+                clump['vertices'].append(vertex)
 
             elif(line_split[0] == "triangle" or line_split[0] == "triangleext"):
                 clump['triangles'].append({
@@ -126,7 +131,7 @@ class RwxReader:
                     'tag': line_split[-1] if line_split[-2] == "tag" else 0
                 })
                 clump['triangles'].append({
-                    'indices': [indices[2], indices[3], indices[0]],
+                    'indices': [indices[0], indices[2], indices[3]],
                     'material': len(clump['materials']),
                     'tag': line_split[-1] if line_split[-2] == "tag" else 0
                 })
@@ -176,6 +181,9 @@ class RwxReader:
             elif(line_split[0] == "scale"):
                 clump['transforms'].append({
                     'type': 'scale',
+                    'x': dirty_float(line_split[1]),
+                    'y': dirty_float(line_split[2]),
+                    'z': dirty_float(line_split[3]),
                 })
             elif(line_split[0] == "translate"):
                 clump['transforms'].append({
@@ -217,5 +225,5 @@ class RwxReader:
     def read_rwx(self):
         line, line_split = self.read_line()
 
-        if(line_split[0] == "modelbegin"):
-            self.model = self.read_clump("modelend")
+        if(line_split[0] == "modelbegin" or line_split[0] == "clumpbegin"):
+            self.model = self.read_clump(line_split[0][:-5] + "end")
