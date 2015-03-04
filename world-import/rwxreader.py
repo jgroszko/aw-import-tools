@@ -18,7 +18,6 @@ class RwxReader:
         "addmaterialmode",
         "removematerialmode",
         "opacityfix",
-        "texture",
         "lightsampling",
         "geometrysampling",
         "materialmodes",
@@ -154,6 +153,11 @@ class RwxReader:
                     'ambient': dirty_float(line_split[1]),
                     'diffuse': dirty_float(line_split[2]),
                     'specular': dirty_float(line_split[3])
+                })
+            elif(line_split[0] == "texture"):
+                clump['materials'].append({
+                    'type': 'texture',
+                    'texture': line_split[1]
                 })
             elif(line_split[0] == "color"):
                 clump['materials'].append({

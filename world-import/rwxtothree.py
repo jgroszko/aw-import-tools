@@ -17,6 +17,10 @@ class RwxToThree():
             'materials': [],
         }
 
+        self.material_base_index = len(self.model['materials'])
+        self.material_index_mapping = {}
+        self.material_cache = []
+
         self.convert(rwx)
 
     def write_json(self, filename, compact=False):
@@ -42,7 +46,7 @@ class RwxToThree():
             for transform in rwx['transforms']:
                 if(transform['type'] == "transform"):
                     matrix = numpy.matrix(transform['matrix']).reshape(4, 4)
-                    matrix_stack.append(matrix * matrix_stack[-1])
+                    matrix_stack.append(numpy.dot(matrix, matrix_stack[-1]))
                     
                 elif(transform['type'] == "identity"):
                     matrix_stack.append(base_matrix)
@@ -53,13 +57,13 @@ class RwxToThree():
                     matrix[1, 1] = transform['y']
                     matrix[2, 2] = transform['z']
 
-                    matrix_stack.append(matrix * matrix_stack[-1])
+                    matrix_stack.append(numpy.dot(matrix, matrix_stack[-1]))
 
                 elif(transform['type'] == "translate"):
                     matrix = numpy.identity(4)
-                    matrix[:3, 3] = [transform['x'], transform['y'], transform['z']]
+                    matrix[3, :3] = [transform['x'], transform['y'], transform['z']]
 
-                    matrix_stack.append(matrix * matrix_stack[-1])
+                    matrix_stack.append(numpy.dot(matrix, matrix_stack[-1]))
 
                 elif(transform['type'] == "rotate"):
                     x, y, z, rad = (transform['x'], transform['y'], transform['z'],
@@ -87,7 +91,7 @@ class RwxToThree():
                                             0.0],
                                            [0.0, 0.0, 0.0, 1.0]])
 
-                    matrix_stack.append(matrix * matrix_stack[-1])
+                    matrix_stack.append(numpy.dot(matrix, matrix_stack[-1]))
 
                 else:
                     raise Exception("Unexpected transform %s" % transform['type'])
@@ -98,19 +102,65 @@ class RwxToThree():
             for vertex in rwx['vertices']:
                 vector = numpy.matrix([vertex['x'], vertex['y'], vertex['z'], 1.0,])
                 vector_transformed = vector.dot(matrix_stack[vertex['transform']])
+
                 self.model['vertices'] += [
                     vector_transformed.item(0,0),
                     vector_transformed.item(0,1),
                     vector_transformed.item(0,2)
                 ]
 
+        if "materials" in rwx:
+            composite_material = {
+                'color': [0.0, 0.0, 0.0],
+                'specular': 0.0,
+                'ambient': 0.0,
+                'diffuse': 0.0,
+                'transparency': 1.0,
+                'texture': None
+            }
+            for rwxMaterial in rwx['materials']:
+                if(rwxMaterial['type'] == 'surface'):
+                    composite_material['ambient'] = rwxMaterial['ambient']
+                    composite_material['diffuse'] = rwxMaterial['diffuse']
+                    composite_material['specular'] = rwxMaterial['specular']
+                elif(rwxMaterial['type'] == 'color'):
+                    composite_material['color'] = [rwxMaterial['r'],
+                                                   rwxMaterial['g'],
+                                                   rwxMaterial['b']]
+                elif(any([rwxMaterial['type'] == s for s in ("ambient", "diffuse", "specular",)])):
+                     composite_material[rwxMaterial['type']] = rwxMaterial[rwxMaterial['type']]
+                elif(rwxMaterial['type'] == "opacity"):
+                     composite_material['transparency'] = rwxMaterial['opacity']
+                elif(rwxMaterial['type'] == "texture"):
+                    composite_material['texture'] = rwxMaterial['texture']
+                     
+
+                new_material = {
+                    "colorAmbient": [c*composite_material['ambient'] for c in composite_material['color']],
+                    "colorDiffuse": [c*composite_material['diffuse'] for c in composite_material['color']],
+                    "colorSpecular": [composite_material['specular'], composite_material['specular'], composite_material['specular']],
+                }
+
+                if('texture' in rwxMaterial and 
+                   rwxMaterial['texture'] is not None):
+                    new_material['diffuseMap'] = rwxMaterial['texture']
+
+                self.material_cache.append(new_material)
+
+            self.model['materials'] = self.model['materials'][-1:]
+
         if "triangles" in rwx:
             for triangle in rwx['triangles']:
+                if triangle['material'] not in self.material_index_mapping:
+                    self.material_index_mapping[triangle['material']] = len(self.model['materials'])
+                    self.model['materials'].append(self.material_cache[triangle['material']-1])
+
                 self.model['faces'] += [
-                    0,
-                    triangle['indices'][0]+vertex_base_index-1,
-                    triangle['indices'][1]+vertex_base_index-1,
-                    triangle['indices'][2]+vertex_base_index-1
+                    2,
+                    int(triangle['indices'][0]+vertex_base_index-1),
+                    int(triangle['indices'][1]+vertex_base_index-1),
+                    int(triangle['indices'][2]+vertex_base_index-1),
+                    self.material_index_mapping[triangle['material']]
                 ]
 
         if "children" in rwx:
