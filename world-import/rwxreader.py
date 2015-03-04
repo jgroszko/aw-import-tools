@@ -105,11 +105,13 @@ class RwxReader:
                 }
                 
                 i = 4
-                while(i < len(line_split)-4):
+                while(i < len(line_split)):
                     if(line_split[i] == "uv"):
                         vertex['u'] = dirty_float(line_split[i+1])
                         vertex['v'] = dirty_float(line_split[i+2])
                         i += 3
+                    else:
+                        i += 1 # TODO: Do this right
                 clump['vertices'].append(vertex)
 
             elif(line_split[0] == "triangle" or line_split[0] == "triangleext"):
@@ -157,7 +159,7 @@ class RwxReader:
             elif(line_split[0] == "texture"):
                 clump['materials'].append({
                     'type': 'texture',
-                    'texture': line_split[1]
+                    'texture': line_split[1] if line_split[1] != 'null' else None
                 })
             elif(line_split[0] == "color"):
                 clump['materials'].append({

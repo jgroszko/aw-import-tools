@@ -1,6 +1,8 @@
 import json
 import math, numpy
 
+TEXTURE_FILE_FORMAT = "%s.png"
+
 class RwxToThree():
     """
     Converts parsed RWX models to Three.js format
@@ -109,6 +111,11 @@ class RwxToThree():
                     vector_transformed.item(0,2)
                 ]
 
+                self.model['uvs'] += [
+                    vertex['u'] if 'u' in vertex else 0.0,
+                    vertex['v'] if 'v' in vertex else 0.0
+                ]
+
         if "materials" in rwx:
             composite_material = {
                 'color': [0.0, 0.0, 0.0],
@@ -141,9 +148,11 @@ class RwxToThree():
                     "colorSpecular": [composite_material['specular'], composite_material['specular'], composite_material['specular']],
                 }
 
-                if('texture' in rwxMaterial and 
-                   rwxMaterial['texture'] is not None):
-                    new_material['diffuseMap'] = rwxMaterial['texture']
+                if('texture' in rwxMaterial):
+                    if(rwxMaterial['texture'] is None):
+                        new_material['mapDiffuse'] = None
+                    else:
+                        new_material['mapDiffuse'] = TEXTURE_FILE_FORMAT % rwxMaterial['texture']
 
                 self.material_cache.append(new_material)
 
@@ -156,12 +165,17 @@ class RwxToThree():
                     self.model['materials'].append(self.material_cache[triangle['material']-1])
 
                 self.model['faces'] += [
-                    2,
+                    10,
                     int(triangle['indices'][0]+vertex_base_index-1),
                     int(triangle['indices'][1]+vertex_base_index-1),
                     int(triangle['indices'][2]+vertex_base_index-1),
-                    self.material_index_mapping[triangle['material']]
+                    self.material_index_mapping[triangle['material']],
+                    int(triangle['indices'][0]+vertex_base_index-1),
+                    int(triangle['indices'][1]+vertex_base_index-1),
+                    int(triangle['indices'][2]+vertex_base_index-1),
                 ]
+
+
 
         if "children" in rwx:
             for child in rwx["children"]:
