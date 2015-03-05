@@ -13,7 +13,7 @@ class RwxToThree():
 
         self.model = {
             'vertices': [],
-            'uvs': [],
+            'uvs': [[],],
             'normals': [],
             'faces': [],
             'materials': [],
@@ -111,7 +111,7 @@ class RwxToThree():
                     vector_transformed.item(0,2)
                 ]
 
-                self.model['uvs'] += [
+                self.model['uvs'][0] += [
                     vertex['u'] if 'u' in vertex else 0.0,
                     vertex['v'] if 'v' in vertex else 0.0
                 ]
