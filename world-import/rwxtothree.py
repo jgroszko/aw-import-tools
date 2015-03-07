@@ -19,9 +19,6 @@ class RwxToThree():
             'materials': [],
         }
 
-        self.material_base_index = len(self.model['materials'])
-        self.material_index_mapping = {}
-
         self.convert(rwx)
 
     def write_json(self, filename, compact=False):
@@ -127,7 +124,7 @@ class RwxToThree():
 
                 self.model['uvs'][0] += [
                     vertex['u'] if 'u' in vertex else 0.0,
-                    vertex['v'] if 'v' in vertex else 0.0
+                    1-vertex['v'] if 'v' in vertex else 0.0
                 ]
 
         material_cache = []
@@ -165,12 +162,11 @@ class RwxToThree():
 
                 material_cache.append(new_material)
 
-            self.model['materials'] = self.model['materials'][-1:]
-
         if "triangles" in rwx:
+            material_index_mapping = {}
             for triangle in rwx['triangles']:
-                if triangle['material'] not in self.material_index_mapping:
-                    self.material_index_mapping[triangle['material']] = len(self.model['materials'])
+                if triangle['material'] not in material_index_mapping:
+                    material_index_mapping[triangle['material']] = len(self.model['materials'])
                     self.model['materials'].append(material_cache[triangle['material']])
 
                 self.model['faces'] += [
@@ -178,12 +174,11 @@ class RwxToThree():
                     int(triangle['indices'][0]+vertex_base_index-1),
                     int(triangle['indices'][1]+vertex_base_index-1),
                     int(triangle['indices'][2]+vertex_base_index-1),
-                    self.material_index_mapping[triangle['material']],
+                    material_index_mapping[triangle['material']],
                     int(triangle['indices'][0]+vertex_base_index-1),
                     int(triangle['indices'][1]+vertex_base_index-1),
                     int(triangle['indices'][2]+vertex_base_index-1),
                 ]
-
 
 
         if "children" in rwx:
