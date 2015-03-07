@@ -142,7 +142,7 @@ class RwxReader:
 
                 indices = [int(line_split[i]) for i in range(2, count+2)]
 
-                for i in range(0, count-1):
+                for i in range(1, count-1):
                     clump['triangles'].append({
                         'indices': [indices[0], indices[i], indices[i+1]],
                         'material': len(clump['materials']),
