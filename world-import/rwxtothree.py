@@ -21,7 +21,6 @@ class RwxToThree():
 
         self.material_base_index = len(self.model['materials'])
         self.material_index_mapping = {}
-        self.material_cache = []
 
         self.convert(rwx)
 
@@ -39,7 +38,22 @@ class RwxToThree():
                 outfile,
                 **dump_options)
 
-    def convert(self, rwx, base_matrix=None):
+    def convert_material(self, material):
+        new_material = {
+            "colorAmbient": [c*material['ambient'] for c in material['color']],
+            "colorDiffuse": [c*material['diffuse'] for c in material['color']],
+            "colorSpecular": [material['specular'], material['specular'], material['specular']],
+        }
+
+        if('texture' in material):
+            if(material['texture'] is None):
+                new_material['mapDiffuse'] = None
+            else:
+                new_material['mapDiffuse'] = TEXTURE_FILE_FORMAT % material['texture']
+
+        return new_material
+
+    def convert(self, rwx, base_matrix=None, base_material=None):
         if(base_matrix is None):
             base_matrix = numpy.identity(4)
 
@@ -116,15 +130,21 @@ class RwxToThree():
                     vertex['v'] if 'v' in vertex else 0.0
                 ]
 
+        material_cache = []
         if "materials" in rwx:
-            composite_material = {
-                'color': [0.0, 0.0, 0.0],
-                'specular': 0.0,
-                'ambient': 0.0,
-                'diffuse': 0.0,
-                'transparency': 1.0,
-                'texture': None
-            }
+            if base_material is None:
+                composite_material = {
+                    'color': [0.0, 0.0, 0.0],
+                    'specular': 0.0,
+                    'ambient': 0.0,
+                    'diffuse': 0.0,
+                    'transparency': 1.0,
+                    'texture': None
+                }
+            else:
+                composite_material = base_material
+            material_cache.append(self.convert_material(composite_material))
+
             for rwxMaterial in rwx['materials']:
                 if(rwxMaterial['type'] == 'surface'):
                     composite_material['ambient'] = rwxMaterial['ambient']
@@ -140,21 +160,10 @@ class RwxToThree():
                      composite_material['transparency'] = rwxMaterial['opacity']
                 elif(rwxMaterial['type'] == "texture"):
                     composite_material['texture'] = rwxMaterial['texture']
-                     
 
-                new_material = {
-                    "colorAmbient": [c*composite_material['ambient'] for c in composite_material['color']],
-                    "colorDiffuse": [c*composite_material['diffuse'] for c in composite_material['color']],
-                    "colorSpecular": [composite_material['specular'], composite_material['specular'], composite_material['specular']],
-                }
+                new_material = self.convert_material(composite_material)
 
-                if('texture' in rwxMaterial):
-                    if(rwxMaterial['texture'] is None):
-                        new_material['mapDiffuse'] = None
-                    else:
-                        new_material['mapDiffuse'] = TEXTURE_FILE_FORMAT % rwxMaterial['texture']
-
-                self.material_cache.append(new_material)
+                material_cache.append(new_material)
 
             self.model['materials'] = self.model['materials'][-1:]
 
@@ -162,7 +171,7 @@ class RwxToThree():
             for triangle in rwx['triangles']:
                 if triangle['material'] not in self.material_index_mapping:
                     self.material_index_mapping[triangle['material']] = len(self.model['materials'])
-                    self.model['materials'].append(self.material_cache[triangle['material']-1])
+                    self.model['materials'].append(material_cache[triangle['material']])
 
                 self.model['faces'] += [
                     10,
@@ -180,5 +189,6 @@ class RwxToThree():
         if "children" in rwx:
             for child in rwx["children"]:
                 self.convert(child['clump'],
-                             matrix_stack[child['transform']])
+                             matrix_stack[child['transform']],
+                             composite_material)
 
