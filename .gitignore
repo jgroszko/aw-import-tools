@@ -1,1 +1,5 @@
 *.pyc
+objects.activeworlds.com/
+
+launch.json
+settings.json

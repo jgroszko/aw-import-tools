@@ -40,7 +40,7 @@ class RwxReader:
         return next(self.token_gen, None)
 
     def file_generator(self, f):
-        for line_no, line in enumerate([l.decode('ascii').strip() for l in f]):
+        for line_no, line in enumerate([l.strip() for l in f]):
             if(line.startswith("#")):
                 continue
 
